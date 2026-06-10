@@ -1,0 +1,139 @@
+---
+name: create-util
+description: Build a new util in the global utils library — most often by promoting a reusable one-off script just written into a permanent `gu` command. Use on explicit /create-util, or after the user has said an explicit yes to an offer to promote. Never writes to the library without that explicit confirmation.
+argument-hint: "[optional: what the util should do — or empty to promote the script just written]"
+allowed-tools: Read Write Edit AskUserQuestion WebSearch WebFetch Bash(gu *) Bash(git *) Bash(uv *) Bash(echo *) Bash(cat *) Bash(head *) Bash(ls *) Bash(mkdir *) Bash(printf *) Bash(find *) Bash(command *) Bash(chmod *)
+---
+
+Library home (LIB): !`echo "${GLOBAL_UTILS_HOME:-$HOME/.local/share/global-utils}"`
+Dispatcher on PATH: !`command -v gu 2>/dev/null || echo "(gu not found — first-run setup needed, see step 0)"`
+Fresh catalog — the source of truth; any in-context snapshot may be stale:
+!`gu list 2>&1 || true`
+
+Request (optional): `$ARGUMENTS`
+
+Call that library path **LIB**. You are about to add a util — a real CLI command, invoked as
+`gu <slug>`, shared across every project and session. **Gate: the user must have explicitly
+asked for or confirmed this creation.** If you offered to promote a one-off and have not yet
+received a clear yes, stop and ask — the library only ever gains utils the user approved.
+
+## 0. First-run setup (only if the dispatcher is missing)
+If `gu` is not on PATH above, the system is not installed on this machine. Setup is
+`deploy.sh` in the `claude-utils-library` repo — it creates LIB (git-initialized), installs
+`gu` (checking for the GraalVM `gu` collision), and registers both discovery layers. Ask the
+user where their clone lives (or to clone it) and run `./deploy.sh`, then continue. If they
+want a custom location, they export `GLOBAL_UTILS_HOME` in their shell rc — the env var is the
+only persistence of a custom location; never record it in a file inside LIB.
+
+## 1. Reuse check (before writing anything)
+The catalog above was read fresh. Compare the need against it:
+- **An existing util already covers the core need** (or would with a modest extension) →
+  do not create a near-duplicate. Propose revising it instead and switch to the
+  `revise-util` skill on the user's go-ahead.
+- **Existing utils cover sub-parts** → compose them: the new util calls
+  `gu <name> --json` as a subprocess (see the composition pattern in step 3) rather than
+  reimplementing their logic inline. Check `gu deps <name>` when unsure what a candidate
+  already pulls in.
+
+## 2. Package research (before hand-rolling non-trivial logic)
+Per-util isolation (`uv run` + PEP 723) makes a dependency near-free, so the bar for
+reimplementing solved problems is high. For any non-trivial core logic, search PyPI / the web
+for an established, well-maintained package (e.g. `charset-normalizer` over hand-written
+encoding detection) and prefer adding it to the PEP 723 header. Skip the search only for
+logic that is genuinely trivial or stdlib-obvious.
+
+## 3. Scaffold `LIB/utils/<slug>/main.py`
+Pick a short kebab-case slug — never one of the reserved gu commands (`list`, `help`,
+`lint`, `deps`, `remove`, `index`). The file must conform to the doc standard:
+
+```python
+# /// script
+# dependencies = []
+# ///
+"""<slug> — <one-line summary; this line IS the catalog entry>.
+
+usage: gu <slug> <args...> [--json]
+calls: (none)
+"""
+
+import argparse
+import json
+import sys
+
+FIXTURE = ...  # built-in data for --selftest
+
+
+def run(...):
+    """Core logic. Returns data; never prints."""
+
+
+def selftest() -> int:
+    result = run(FIXTURE, ...)
+    assert result == ...,  f"unexpected: {result!r}"
+    print("selftest: ok", file=sys.stderr)
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(prog="gu <slug>", description="<summary>")
+    parser.add_argument("--json", action="store_true", help="structured JSON on stdout")
+    parser.add_argument("--selftest", action="store_true", help="run built-in checks")
+    # ... the util's own arguments ...
+    args = parser.parse_args()
+    if args.selftest:
+        return selftest()
+    try:
+        result = run(...)
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    if args.json:
+        json.dump(result, sys.stdout)
+        print()
+    else:
+        print(...)  # human-readable
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+```
+
+Non-negotiables (composition lives or dies on these):
+- **Docstring header**: first line `<slug> — <summary>` (em dash, slug = directory name),
+  a `usage:` line showing `gu <slug> ...`, a `calls:` line naming every util this one
+  invokes or `(none)`. The catalog is derived from this header — there is no index to edit.
+- **I/O contract**: data on stdout (human-readable by default, JSON under `--json`);
+  diagnostics and progress on stderr, never stdout; exit 0 on success, non-zero on failure.
+- **`--selftest`**: at minimum one representative happy-path check against built-in fixture
+  data. This is what makes later silent revision safe.
+- **Composition** goes through the CLI boundary, never Python imports across utils:
+  ```python
+  rows = json.loads(subprocess.run(
+      ["gu", "csv-dedupe", path, "--json"],
+      capture_output=True, text=True, check=True,
+  ).stdout)
+  ```
+  Note: any code string containing `gu <name>` counts as a derived call site — keep prose
+  mentions of other utils in comments or the docstring, never in code strings.
+- When promoting a one-off, keep the proven logic but refit it to this shape; generalize
+  the hardcoded values into arguments.
+
+## 4. Verify (all green before declaring done)
+1. `gu lint <slug>` — doc-standard conformance, including `calls:` vs the derived graph.
+2. Smoke-test: `gu <slug> ...` on a real or representative input, and `gu <slug> ... --json`.
+3. `gu <slug> --selftest`.
+
+Fix and re-run until all three pass. The first `gu <slug>` run also exercises PEP 723
+resolution — a typo'd dependency surfaces here.
+
+## 5. Commit (every library write is a commit)
+- `git -C LIB add -A`
+- `git -C LIB commit -m "create <slug>"`
+
+## 6. Report
+There is **no index step** — the catalog is derived, and the SessionStart hook injects a
+fresh snapshot at the next startup/resume/clear/compact. Report to the user:
+- the slug and what it does (the one-line summary),
+- the invocation (`gu <slug> ...`, plus `--json` for structured output),
+- which packages it depends on (or none), and the commit message used.
