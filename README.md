@@ -76,6 +76,42 @@ ones while each stays independently testable. Those call sites *are* the composi
 See [SYSTEM_DESIGN.md](SYSTEM_DESIGN.md) for the full design, the settled decisions, and
 walked-through use cases.
 
+## Example workflows
+
+These show the library in everyday use — the prompts are what *you* say to Claude; the rest is
+what happens. ([SYSTEM_DESIGN.md §7](SYSTEM_DESIGN.md) walks through each in more detail.)
+
+**A one-off becomes a util.** You ask *"dedupe this CSV"*. Claude writes a throwaway script,
+runs it, then notices it's reusable and offers: *"promote this to `gu csv-dedupe`?"* You say
+yes — `create-util` scaffolds it to the doc standard, lints, selftests, and commits. Say no and
+nothing is written. The next time, you skip straight to:
+
+```bash
+gu csv-dedupe data.csv --json
+```
+
+**A recurring task needs no rebuild.** Weeks later you say *"convert these HEIC files to jpg."*
+The session-start hook already injected the catalog, so Claude *sees* `heic2jpg` and just runs
+it — no skill, no lookup, no rebuild:
+
+```bash
+gu heic2jpg *.heic --quality 85
+```
+
+**A util breaks and self-heals.** `gu csv-dedupe` chokes on a UTF-16 file mid-task. Claude
+patches the encoding handling, re-verifies the doc standard plus the selftests of `csv-dedupe`
+*and everything that calls it*, commits `revise csv-dedupe: handle UTF-16 input`, and carries on
+— no interruption, and `git revert` undoes it if the fix was wrong.
+
+**You extend a util explicitly.** `/revise-util heic2jpg — also accept PNG output`. Targeted
+edit, re-verify, commit. The session is now bound to `heic2jpg`, so a follow-up *"also strip
+EXIF"* needs no slug.
+
+**Small utils compose into a bigger one.** *"Build me a weekly report from these CSVs."* The new
+`report` util shells out to `gu csv-dedupe --json` then `gu chart --json`, each in its own
+isolated env. Those call sites *are* the dependency graph (`gu deps` derives it), so fixing
+`csv-dedupe` later benefits `report` for free — and `report`'s selftest guards the fix.
+
 ## Install (user-wide)
 
 ```bash
