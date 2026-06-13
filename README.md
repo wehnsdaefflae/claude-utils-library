@@ -76,41 +76,51 @@ ones while each stays independently testable. Those call sites *are* the composi
 See [SYSTEM_DESIGN.md](SYSTEM_DESIGN.md) for the full design, the settled decisions, and
 walked-through use cases.
 
-## Example workflows
+## Example workflow
 
-These show the library in everyday use — the prompts are what *you* say to Claude; the rest is
-what happens. ([SYSTEM_DESIGN.md §7](SYSTEM_DESIGN.md) walks through each in more detail.)
+A conversation excerpt showing the full lifecycle — a one-off getting promoted, then reused
+weeks later, then self-healing when it hits bad input. ([SYSTEM_DESIGN.md §7](SYSTEM_DESIGN.md)
+walks through every scenario.)
 
-**A one-off becomes a util.** You ask *"dedupe this CSV"*. Claude writes a throwaway script,
-runs it, then notices it's reusable and offers: *"promote this to `gu csv-dedupe`?"* You say
-yes — `create-util` scaffolds it to the doc standard, lints, selftests, and commits. Say no and
-nothing is written. The next time, you skip straight to:
+> **You:** Dedupe `contacts.csv` — collapse rows with the same email.
+>
+> **Claude:** *(writes a quick script, runs it)* Done — 1,204 rows → 1,180, dropped 24
+> duplicate emails. This looks reusable; want me to promote it to `gu csv-dedupe` so it's a
+> permanent command?
+>
+> **You:** yes
+>
+> **Claude:** *(runs `/create-util`)* Scaffolded `utils/csv-dedupe/main.py` to the doc standard,
+> `gu lint` clean, `--selftest` passes, committed `create csv-dedupe`. Use it anywhere with:
+> ```bash
+> gu csv-dedupe contacts.csv --key email --json
+> ```
 
-```bash
-gu csv-dedupe data.csv --json
-```
+Weeks later, in a fresh session — the catalog was pushed in at session start, so it's already
+visible:
 
-**A recurring task needs no rebuild.** Weeks later you say *"convert these HEIC files to jpg."*
-The session-start hook already injected the catalog, so Claude *sees* `heic2jpg` and just runs
-it — no skill, no lookup, no rebuild:
+> **You:** Clean up the dupes in this export, then chart signups per month.
+>
+> **Claude:** `csv-dedupe` is in the catalog, so I'll use it rather than rewrite:
+> ```bash
+> gu csv-dedupe export.csv --key email --json
+> ```
+> ```
+> gu: error: 'utf-16' codec can't decode byte ... (the file is UTF-16)
+> ```
+> That's a bug in the util — patching it instead of working around it. *(implicit
+> `revise-util`: fixes the encoding handling, re-runs `gu lint`, `csv-dedupe --selftest`, **and**
+> every reverse-dependent's selftest, commits `revise csv-dedupe: handle UTF-16 input`)*
+> Fixed and committed — `git revert` undoes it if it was wrong. Re-running:
+> ```bash
+> gu csv-dedupe export.csv --key email --json   # 3,002 → 2,955
+> ```
+> Now for the chart.
 
-```bash
-gu heic2jpg *.heic --quality 85
-```
-
-**A util breaks and self-heals.** `gu csv-dedupe` chokes on a UTF-16 file mid-task. Claude
-patches the encoding handling, re-verifies the doc standard plus the selftests of `csv-dedupe`
-*and everything that calls it*, commits `revise csv-dedupe: handle UTF-16 input`, and carries on
-— no interruption, and `git revert` undoes it if the fix was wrong.
-
-**You extend a util explicitly.** `/revise-util heic2jpg — also accept PNG output`. Targeted
-edit, re-verify, commit. The session is now bound to `heic2jpg`, so a follow-up *"also strip
-EXIF"* needs no slug.
-
-**Small utils compose into a bigger one.** *"Build me a weekly report from these CSVs."* The new
-`report` util shells out to `gu csv-dedupe --json` then `gu chart --json`, each in its own
-isolated env. Those call sites *are* the dependency graph (`gu deps` derives it), so fixing
-`csv-dedupe` later benefits `report` for free — and `report`'s selftest guards the fix.
+The util got built once, reused with zero rebuild, and repaired itself mid-task — all without
+leaving the conversation. Explicit edits work the same way (`/revise-util csv-dedupe — also
+accept a --since filter`), and utils compose by shelling out to each other (`report` calling
+`gu csv-dedupe --json` then `gu chart --json`), each in its own isolated env.
 
 ## Install (user-wide)
 
@@ -129,17 +139,6 @@ For a custom library location, `export GLOBAL_UTILS_HOME=...` in your shell rc *
 deploying — the env var is the only persistence of a custom location. Relocating later is
 moving the directory and updating the env var.
 
-## Releasing
-
-Cutting a release is one command once the changelog is updated:
-
-1. Move your `## [Unreleased]` bullets into a new `## [X.Y.Z] - YYYY-MM-DD` section, add its
-   `[X.Y.Z]: …/compare/…` link reference, and commit that.
-2. `./release.sh X.Y.Z` — extracts that section's notes, tags `vX.Y.Z` at `HEAD`, pushes,
-   and creates the matching GitHub release (marked Latest only if it's the highest version).
-
-Run `./release.sh X.Y.Z --dry-run` first to preview without changing anything.
-
 ## Notes
 
 - Python ≥ 3.11 (`gu` uses stdlib `tomllib`) and [uv](https://docs.astral.sh/uv/) on PATH.
@@ -147,3 +146,5 @@ Run `./release.sh X.Y.Z --dry-run` first to preview without changing anything.
   exists.
 - Two sessions revising the same util race (last-write-wins); git makes the loser
   recoverable. See SYSTEM_DESIGN.md §8 for this and other deliberate deferrals.
+- Maintaining this repo (editing the dispatcher/skills/hook, cutting a release)?
+  See [CONTRIBUTING.md](CONTRIBUTING.md).
