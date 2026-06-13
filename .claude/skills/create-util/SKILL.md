@@ -25,7 +25,7 @@ user where their clone lives (or to clone it) and run `./deploy.sh`, then contin
 want a custom location, they export `GLOBAL_UTILS_HOME` in their shell rc — the env var is the
 only persistence of a custom location; never record it in a file inside LIB.
 
-## 1. Reuse check (before writing anything)
+## 1. Reuse & factoring check (before writing anything)
 The catalog above was read fresh. Compare the need against it:
 - **An existing util already covers the core need** (or would with a modest extension) →
   do not create a near-duplicate. Propose revising it instead and switch to the
@@ -34,6 +34,24 @@ The catalog above was read fresh. Compare the need against it:
   `gu <name> --json` as a subprocess (see the composition pattern in step 3) rather than
   reimplementing their logic inline. Check `gu deps <name>` when unsure what a candidate
   already pulls in.
+
+Then decide where the util boundaries fall. The reuse bullets ask "is this already a util?";
+these ask "should this be *one* util at all?" — the inverse direction, and just as mandatory:
+- **The candidate bundles separable responsibilities** → factor it before scaffolding. A
+  one-off that mixes, say, a deterministic transform + side-effecting I/O + a flaky heuristic
+  + an orchestration layer becomes several single-purpose utils composed at the CLI boundary,
+  not one monolith. Prefer *splitting* a new util as readily as you prefer *not duplicating*
+  an existing one.
+- **One part is unreliable** (an OCR/layout guess, a scrape, any heuristic) → quarantine it in
+  its own util so its flakiness can't contaminate the deterministic core, and so it can be
+  selftested, revised, or swapped independently.
+- **The reusable thing is data, not code** → don't write a util for it. A saved spec/template
+  (e.g. field coordinates for a recurring form) consumed by a *generic* util is the right
+  artifact: build the generic util once, keep the spec as plain data.
+- **YAGNI brake** → extract only the seams *proven* reusable now. Build the part you have
+  actually exercised; name the rest as future seams in the docstring rather than speculatively
+  splitting utils no second caller needs yet. Decomposition is a factoring judgement, not an
+  invitation to over-build.
 
 ## 2. Package research (before hand-rolling non-trivial logic)
 Per-util isolation (`uv run` + PEP 723) makes a dependency near-free, so the bar for

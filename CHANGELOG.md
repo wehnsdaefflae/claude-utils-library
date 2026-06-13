@@ -8,6 +8,14 @@ changes are released as MINOR bumps.
 
 ## [Unreleased]
 
+### Changed
+- **`/create-util`: reuse check → reuse & factoring check.** Before scaffolding, the skill now
+  also decides where util boundaries fall — factor a candidate into single-responsibility utils
+  composed at the CLI boundary, quarantine unreliable/heuristic steps in their own util, prefer
+  a data template over code when the reusable thing is data, and extract only seams a second
+  caller actually needs (YAGNI). Rationale documented in `SYSTEM_DESIGN.md` §5.1; summarized in
+  `CLAUDE.md`.
+
 ## [0.1.0] - 2026-06-10
 
 Initial implementation of the global-utils system described in `SYSTEM_DESIGN.md`.

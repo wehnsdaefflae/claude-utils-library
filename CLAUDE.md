@@ -11,8 +11,11 @@ Workflow:
   `gu list` snapshot, and a durable pointer line in the user's `CLAUDE.md` survives
   compaction.
 - **`/create-util`** — new util, usually promoting a one-off script. Suggest, never silent:
-  writes only on the user's explicit yes. Reuse check (fresh `gu list` + `gu deps`) before
-  creating; PyPI research before hand-rolling non-trivial logic.
+  writes only on the user's explicit yes. Reuse & factoring check (fresh `gu list` + `gu deps`)
+  before creating — reuse/compose existing utils, *and* decide whether the candidate should be
+  split into single-responsibility utils (quarantine flaky steps; data→template, not code;
+  YAGNI on unproven seams, see SYSTEM_DESIGN §5.1); PyPI research before hand-rolling non-trivial
+  logic.
 - **`/revise-util [slug]`** — explicit changes, *and* implicit auto-repair when a util errors
   mid-use. Gated by `gu lint` + the target's `--selftest` + every reverse-dependent's
   `--selftest`; every write is a git commit (silent but reversible).

@@ -30,7 +30,8 @@ Principles that follow from that and from the design decisions made:
    impossible (PEP 723 + `uv run`), yet it still feels like one managed space.
 3. **Utils compose through the CLI boundary.** A util calls another util via `gu <name>` as a
    subprocess with structured I/O. Small utils layer into bigger ones. Complexity grows by
-   composition, not by a monolith.
+   composition, not by a monolith — boundaries drawn at creation time by factoring along
+   responsibilities (§5.1).
 4. **Everything structural is derived, never hand-maintained.** The catalog is regenerated from
    the doc standard on every read; the dependency graph is derived from the call sites in source,
    not from declarations. Nothing a safety check relies on can drift.
@@ -223,13 +224,17 @@ rollback-able (`git revert`). It also gives sync (push to a private remote) for 
 
 **Behavior:**
 1. Resolve the library home (run first-run setup if needed, see UC7).
-2. **Reuse check (before writing anything):** run `gu list` fresh (the in-context snapshot may
-   be stale) and scan for overlap.
+2. **Reuse & factoring check (before writing anything):** run `gu list` fresh (the in-context
+   snapshot may be stale) and scan for overlap, then decide where the util boundaries fall.
    - If an existing util already covers the core need (or would with a modest extension),
      propose `revise-util` on it instead of creating a near-duplicate — the library stays
      deduplicated by procedure, not just by ambient awareness.
    - If existing utils cover *sub-parts* of the need, compose them: call `gu <name> --json`
      as subprocesses (§5) rather than reimplementing their logic inline.
+   - If the candidate itself bundles separable responsibilities, factor it into
+     single-responsibility utils — quarantining unreliable/heuristic steps, preferring a data
+     template over code where the reusable thing is data, and splitting only seams a second
+     caller actually needs (YAGNI). See §5.1.
 3. **Package research (before hand-rolling non-trivial logic):** search PyPI / the web for an
    established, well-maintained package that already solves the core problem (e.g.
    `charset-normalizer` over hand-written encoding detection). Prefer adding it to the util's
@@ -324,6 +329,28 @@ other and into Claude. These `["gu", "<name>", ...]` call sites *are* the compos
 `gu deps` derives it from source so `revise-util` and `gu remove` can reason about blast radius,
 while the `calls:` docstring line documents it for human readers (`gu lint` keeps the two
 consistent).
+
+### 5.1 Decomposition at creation time
+
+Composition (above) is the *runtime* mechanism; the matching *authoring* decision is **where to
+draw a util's boundaries** — made in `create-util` step 1, alongside the reuse check. The reuse
+check asks "is this already a util?"; this asks "should this be *one* util at all?" Both guard
+the same goal — small, independently testable, replaceable pieces — from opposite directions:
+
+- **Factor by responsibility.** A candidate that bundles separable concerns — a pure
+  deterministic transform, side-effecting I/O, a flaky heuristic, an orchestration layer —
+  becomes several single-purpose utils, not a monolith. Splitting a new util is preferred as
+  readily as not duplicating an existing one.
+- **Quarantine the unreliable.** An OCR/layout guess, a scrape, any heuristic lives in its own
+  util, so its flakiness cannot contaminate a deterministic core and it can be selftested,
+  revised, or swapped on its own. (Concretely: a `pdf-detect-fields` guesser kept apart from a
+  deterministic `pdf-stamp` placer.)
+- **Data is not code.** When the reusable thing is data — coordinates for a recurring form, a
+  mapping table — the artifact is a saved spec/template consumed by a *generic* util, built
+  once, not a new util per instance.
+- **YAGNI brake.** Extract only the seams *proven* reusable; the rest are named as future seams
+  in a docstring, not speculatively split. Decomposition is a factoring judgement, and like the
+  reuse and package-research checks it has a cost ceiling — it must not tip into over-building.
 
 ---
 
