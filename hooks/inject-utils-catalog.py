@@ -41,9 +41,13 @@ def main() -> None:
         return
     context = (
         "Global utils — catalog snapshot (a cache: run `gu list` for current state). "
-        "These are real CLI commands; run one with `gu <name> [args]`. Prefer an "
-        "existing util over writing an inline one-off. If a util errors or misbehaves "
-        "mid-use, repair it via the revise-util skill (selftest-gated, committed).\n"
+        "These are real CLI commands; run one with `gu <name> [args]`. "
+        "Default to utils over inline code: before writing more than a trivial "
+        "one-liner of shell or Python, check the catalog and use a util that fits. "
+        "If the task is reusable and none fits, create one with the create-util skill "
+        "instead of a throwaway — a snippet you'd plausibly run again is a util, not a "
+        "heredoc. If a util errors or misbehaves mid-use, repair it via the revise-util "
+        "skill (selftest-gated, committed).\n"
         + result.stdout
     )
     json.dump(

@@ -178,8 +178,10 @@ compaction, and because the re-fire runs `gu list` *fresh*, every compaction is 
 
 **Layer 2 — durable pointer (`CLAUDE.md`).** One line in the user's `CLAUDE.md`:
 
-> Reusable CLI utils live in a global library: the in-context catalog is a snapshot — run
-> `gu list` for the current set, and prefer an existing util over rewriting a one-off.
+> Reusable CLI utils live in a global library (run `gu list` for the current set; the
+> in-context catalog is a snapshot). Default to a util over inline code: before writing more
+> than a trivial one-liner of shell or Python, use a util that fits, or create one with the
+> create-util skill when the need is reusable and none exists.
 
 `CLAUDE.md` survives compaction as standing context, so this line is the floor that never
 vanishes: even when the snapshot is stale or momentarily absent, Claude always knows the

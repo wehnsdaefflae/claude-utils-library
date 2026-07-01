@@ -9,6 +9,14 @@ changes are released as MINOR bumps.
 ## [Unreleased]
 
 ### Changed
+- **Discovery guidance strengthened: "prefer a util" → "default to a util."** The SessionStart
+  hook snapshot and the `CLAUDE.md` pointer now name the trigger (before writing more than a
+  trivial one-liner of shell/Python), the use-an-existing-util path, *and* the
+  create-when-none-exists path via `/create-util` — closing the gap where the absence of a
+  matching util quietly nudged Claude toward inline code instead of creating one. `deploy.sh`
+  now replaces the pointer line in place on redeploy (it previously skipped when the anchor was
+  present, so reworded pointers never propagated to already-deployed machines) and collapses
+  duplicates. Wording synced in `SYSTEM_DESIGN.md` (Discovery, Layer 2).
 - **`/create-util`: reuse check → reuse & factoring check.** Before scaffolding, the skill now
   also decides where util boundaries fall — factor a candidate into single-responsibility utils
   composed at the CLI boundary, quarantine unreliable/heuristic steps in their own util, prefer

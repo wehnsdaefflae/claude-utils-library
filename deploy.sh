@@ -99,16 +99,34 @@ PY
 
 # 7. Durable pointer (discovery layer 2) — one line in the user's CLAUDE.md that survives
 #    compaction; the floor that never vanishes even when the hook snapshot is stale/absent.
+#    Replace-in-place on redeploy (matched by the stable anchor prefix) so wording updates
+#    actually propagate; append if absent; collapse any accidental duplicates.
 USER_MD="$CLAUDE/CLAUDE.md"
-POINTER='Reusable CLI utils live in a global library: the in-context catalog is a snapshot — run `gu list` for the current set, and prefer an existing util over rewriting a one-off.'
+POINTER='Reusable CLI utils live in a global library (run `gu list` for the current set; the in-context catalog is a snapshot). Default to a util over inline code: before writing more than a trivial one-liner of shell or Python, use a util that fits, or create one with the create-util skill when the need is reusable and none exists.'
 touch "$USER_MD"
-if grep -qF 'Reusable CLI utils live in a global library' "$USER_MD"; then
-  echo "  CLAUDE.md pointer already present (no change)"
-else
-  [ -s "$USER_MD" ] && printf '\n' >> "$USER_MD"
-  printf '%s\n' "$POINTER" >> "$USER_MD"
-  echo "  pointer -> $USER_MD"
-fi
+python3 - "$USER_MD" "$POINTER" <<'PY'
+import sys
+path, pointer = sys.argv[1], sys.argv[2]
+anchor = "Reusable CLI utils live in a global library"
+lines = open(path).read().splitlines()
+kept, seen = [], False
+for ln in lines:
+    if anchor in ln:
+        if not seen:
+            kept.append(pointer); seen = True
+        # drop this and any later duplicate pointer lines
+    else:
+        kept.append(ln)
+if not seen:
+    if kept and kept[-1].strip():
+        kept.append("")
+    kept.append(pointer)
+    action = "appended"
+else:
+    action = "unchanged" if pointer in lines else "refreshed"
+open(path, "w").write("\n".join(kept) + "\n")
+print(f"  CLAUDE.md pointer {action} -> {path}")
+PY
 
 # 8. Custom-location reminder
 if [ -n "${GLOBAL_UTILS_HOME:-}" ]; then
