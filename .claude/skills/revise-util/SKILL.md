@@ -16,6 +16,14 @@ Call that library path **LIB**. You are changing shared code that every project 
 other util may rely on — the procedure below is what makes a *silent* revision acceptable:
 verified by selftests, recorded as a commit, always revertible.
 
+## 0. Sync the library first
+`git -C "$LIB" pull --rebase --autostash` before touching anything — the local tree is all
+that `gu list`, `gu deps`, and your edit see, and other machines push to the same remote.
+Revising a stale copy forks history and ends in exactly the merge conflicts this procedure
+exists to prevent. Then re-derive the catalog with `gu list` (the snapshot above predates
+the pull). Remote unreachable → proceed locally and say so in the report; pull conflict →
+resolve or `git -C "$LIB" rebase --abort` and surface it before editing.
+
 ## 1. Resolve the target util
 - A slug in `$ARGUMENTS` that appears in the catalog wins.
 - Otherwise use the bound util above, if non-empty — but clear a **stale binding** (slug no

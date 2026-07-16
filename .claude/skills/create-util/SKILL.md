@@ -25,8 +25,18 @@ user where their clone lives (or to clone it) and run `./deploy.sh`, then contin
 want a custom location, they export `GLOBAL_UTILS_HOME` in their shell rc — the env var is the
 only persistence of a custom location; never record it in a file inside LIB.
 
-## 1. Reuse & factoring check (before writing anything)
-The catalog above was read fresh. Compare the need against it:
+## 1. Sync, then reuse & factoring check (before writing anything)
+**Pull LIB first — the catalog above is derived from the local tree only.** Other machines
+push to the same remote, so without a pull you can spend the whole skill building a util
+that already exists upstream (this happened: two independently created `deepgram` twins had
+to be hand-merged out of a rebase conflict).
+- `git -C "$LIB" pull --rebase --autostash`, then re-derive with `gu list` and use THAT
+  listing below.
+- Remote unreachable/offline → proceed on the local tree, but say so in the final report.
+- Pull hits a conflict → resolve it (or `git -C "$LIB" rebase --abort` and surface to the
+  user) **before** creating anything.
+
+Compare the need against the re-derived catalog:
 - **An existing util already covers the core need** (or would with a modest extension) →
   do not create a near-duplicate. Propose revising it instead and switch to the
   `revise-util` skill on the user's go-ahead.

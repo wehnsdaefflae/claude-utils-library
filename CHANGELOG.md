@@ -9,6 +9,12 @@ changes are released as MINOR bumps.
 ## [Unreleased]
 
 ### Changed
+- **Skills now pull before they write.** `/create-util` (start of the reuse check) and
+  `/revise-util` (new step 0) begin with `git -C LIB pull --rebase --autostash` + a
+  re-derived `gu list`. Rationale: the library auto-pushes on commit but never pulled, and
+  with multiple instances sharing one remote the local catalog silently staled — leading to
+  an independently created duplicate util (`deepgram`) that had to be merged out of a rebase
+  conflict. Offline → proceed with a note; conflict → resolve/abort before writing.
 - **Discovery guidance strengthened: "prefer a util" → "default to a util."** The SessionStart
   hook snapshot and the `CLAUDE.md` pointer now name the trigger (before writing more than a
   trivial one-liner of shell/Python), the use-an-existing-util path, *and* the
