@@ -51,6 +51,12 @@ $GLOBAL_UTILS_HOME/
 dependency graph comes from `gu deps`, which scans source for `gu <name>` call sites — the
 `calls:` docstring line is documentation only, and `gu lint` flags any disagreement.
 
+**The header is also a sandbox contract.** This library doubles as the util library of a
+[routine-scheduler](https://github.com/wehnsdaefflae/routine-scheduler) instance, where LLM
+routines run these utils inside a Landlock jail keyed off two header lines: `net:` (undeclared
+= all TCP denied) and `secrets:` (only declared credentials are injected). `gu lint` enforces
+both, so a util created here is one the scheduler accepts.
+
 **Dependencies are isolated per util.** Each `main.py` declares its own deps in a PEP 723
 `# /// script` header and runs via `uv run` in its own cached environment — cross-util
 conflicts are impossible, yet it feels like one managed space. ([uv](https://docs.astral.sh/uv/)
@@ -68,7 +74,7 @@ ones while each stays independently testable. Those call sites *are* the composi
 | `gu list` | The derived catalog — header read only, no execution, no venv. |
 | `gu <util> [args]` | `uv run` the util in its own cached env. |
 | `gu help <util>` | The util's `--help`. |
-| `gu lint [<util>]` | Doc-standard conformance, incl. `calls:` vs the derived graph. |
+| `gu lint [<util>]` | Doc-standard conformance, incl. `calls:` vs the derived graph and `secrets:` vs the credential env vars the source reads. |
 | `gu deps <util>` | What it calls and what calls it, derived from source. |
 | `gu remove <util>` | Delete — refuses while anything still calls it (`--force` overrides). |
 | `gu index` | Write the catalog to a gitignored `INDEX.md`, if a browsable file is wanted. |

@@ -8,7 +8,33 @@ changes are released as MINOR bumps.
 
 ## [Unreleased]
 
+### Fixed
+- **`deploy.sh` no longer commits unrelated work-in-progress.** It staged the library with
+  `git add -A` and committed everything as "deploy: gu dispatcher + library scaffolding" —
+  so redeploying while any util was mid-edit swept that util into a deploy commit and (since
+  the library auto-pushes) published it to the shared remote, mislabelled and possibly
+  unfinished. Observed doing exactly that to a 290-line in-progress `codemap` revision. Deploy
+  now stages only `gu` + `.gitignore`, and prints a note that other uncommitted changes were
+  left alone.
+
 ### Changed
+- **The doc standard now covers `tags:`, `net:` and `secrets:` — aligned with the
+  routine-scheduler, which is authoritative.** This library doubles as the util library of a
+  routine-scheduler instance, and there every util subprocess runs in a Landlock sandbox keyed
+  off two header lines: `net:` decides whether TCP is allowed at all (undeclared = **all TCP
+  denied**) and `secrets:` decides which credentials are injected (undeclared = scrubbed). The
+  server enforced all six header lines via `rsched.utils_lib.header_problems`, while `gu lint`
+  and both skills still taught only three — so a util created here linted clean and then failed
+  *there* with no network or an empty credential, a silent runtime failure rather than a clean
+  rejection. `gu lint` now checks `tags:` (≥1), `net: outbound|none`, and `secrets:` against the
+  credential-shaped env vars the source actually reads (direct `os.environ["X_TOKEN"]` and
+  module-constant-indirect shapes; the scheduler additionally handles a grouped tuple-of-names
+  shape). `create-util` scaffolds all six lines and states that two of them are enforcement, not
+  documentation; `revise-util` gains an explicit re-check, since adding an HTTP call or a new
+  credential read silently invalidates them. Verified across all 80 utils: verdicts identical to
+  before (the scheduler's boot migration had already repaired every existing header), and
+  confirmed to agree with `header_problems` on a deliberately broken fixture. Docs swept:
+  `SYSTEM_DESIGN.md` §3.3 + lint row + UC1, `README.md`, `CLAUDE.md`.
 - **Skills now pull before they write.** `/create-util` (start of the reuse check) and
   `/revise-util` (new step 0) begin with `git -C LIB pull --rebase --autostash` + a
   re-derived `gu list`. Rationale: the library auto-pushes on commit but never pulled, and

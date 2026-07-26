@@ -82,6 +82,9 @@ Pick a short kebab-case slug — never one of the reserved gu commands (`list`, 
 
 usage: gu <slug> <args...> [--json]
 calls: (none)
+tags: <tag>, <tag>
+net: none
+secrets: (none)
 """
 
 import argparse
@@ -128,9 +131,24 @@ if __name__ == "__main__":
 ```
 
 Non-negotiables (composition lives or dies on these):
-- **Docstring header**: first line `<slug> — <summary>` (em dash, slug = directory name),
-  a `usage:` line showing `gu <slug> ...`, a `calls:` line naming every util this one
-  invokes or `(none)`. The catalog is derived from this header — there is no index to edit.
+- **Docstring header** — the util's ONLY machine-read surface, and read by more than the
+  catalog (see below). All six lines are required; `gu lint` rejects a missing one:
+  - first line `<slug> — <summary>` (em dash, slug = directory name)
+  - `usage:` showing `gu <slug> ...`
+  - `calls:` — every util this one invokes, or `(none)`
+  - `tags:` — at least one, comma-separated
+  - `net: outbound` if the util opens ANY network connection, else `net: none`
+  - `secrets:` — every credential-shaped env var the code reads, or `(none)`
+
+  The catalog is derived from this header — there is no index to edit.
+- **`net:` and `secrets:` are enforcement, not documentation.** The routine-scheduler engine
+  runs each util in a Landlock sandbox keyed off these two lines: `net:` decides whether TCP
+  is permitted at all (undeclared = ALL TCP denied) and `secrets:` decides which credentials
+  are injected (undeclared = scrubbed, even when the daemon's environment carries them). Get
+  them wrong and the util works here and fails *there* — no network, or an empty credential —
+  which is far harder to diagnose than a clean rejection. When in doubt about a var, declare
+  it. `rsched.utils_lib.header_problems` on the server is the authoritative spec; `gu lint`
+  implements the same rules, so keep the two in step if either moves.
 - **I/O contract**: data on stdout (human-readable by default, JSON under `--json`);
   diagnostics and progress on stderr, never stdout; exit 0 on success, non-zero on failure.
 - **`--selftest`**: at minimum one representative happy-path check against built-in fixture
@@ -148,7 +166,8 @@ Non-negotiables (composition lives or dies on these):
   the hardcoded values into arguments.
 
 ## 4. Verify (all green before declaring done)
-1. `gu lint <slug>` — doc-standard conformance, including `calls:` vs the derived graph.
+1. `gu lint <slug>` — doc-standard conformance: the six header lines, `calls:` vs the derived
+   graph, and `secrets:` vs the credential env vars the source actually reads.
 2. Smoke-test: `gu <slug> ...` on a real or representative input, and `gu <slug> ... --json`.
 3. `gu <slug> --selftest`.
 

@@ -48,6 +48,37 @@ SUMMARY_RE = re.compile(r"^(?P<name>\S+) — (?P<summary>.+)$")
 LIST_FORM_RE = re.compile(r"""["']gu["']\s*,\s*["']([a-z0-9][a-z0-9-]*)["']""")
 SHELL_FORM_RE = re.compile(r"""["'][^"'\n]*\bgu\s+([a-z0-9][a-z0-9-]*)""")
 
+# The routine-scheduler engine reads the SAME docstring header to sandbox each util
+# subprocess: `net:` decides whether TCP is allowed at all (undeclared = denied, fail closed)
+# and `secrets:` decides which credentials are injected (undeclared = scrubbed, even when the
+# daemon's own environment carries them). A util that omits them lints clean here and then
+# fails mysteriously *there* — no network, no credentials — so lint enforces them too.
+# `rsched.utils_lib.header_problems` is the authoritative spec; keep this in step with it.
+NET_VALUES = {"outbound", "none"}
+# Credential-shaped env var names read by the code, in the two shapes worth catching:
+#   direct    os.environ["X_TOKEN"] / os.getenv("X_TOKEN")
+#   indirect  VAR = "X_TOKEN"  then  os.environ[VAR]   (the `gu claude` pattern)
+# The engine also handles a grouped tuple-of-names shape; that one stays server-side.
+ENV_READ = r"""os\.(?:environ(?:\.get\(|\[)|getenv\()\s*"""
+ENV_LITERAL_RE = re.compile(ENV_READ + r"""["']([A-Z][A-Z0-9_]*)["']""")
+ENV_VARKEY_RE = re.compile(ENV_READ + r"""([A-Za-z_][A-Za-z0-9_]*)\b""")
+CONST_ASSIGN_RE = re.compile(
+    r"""^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*["']([A-Z][A-Z0-9_]*)["']""", re.MULTILINE)
+SECRET_HINT_RE = re.compile(r"(KEY|TOKEN|SECRET|PASSWORD|PASS|CREDENTIAL)S?$")
+
+
+def secrets_read(src: str) -> set[str]:
+    """Credential-shaped env var names the source reads — directly, or through a module-level
+    string constant. Pure text scan, like every other derivation in gu.
+    """
+    found = {v for v in ENV_LITERAL_RE.findall(src) if SECRET_HINT_RE.search(v)}
+    consts = dict(CONST_ASSIGN_RE.findall(src))
+    for var in ENV_VARKEY_RE.findall(src):
+        literal = consts.get(var)
+        if literal and SECRET_HINT_RE.search(literal):
+            found.add(literal)
+    return found
+
 
 def lib_home() -> Path:
     env = os.environ.get("GLOBAL_UTILS_HOME")
@@ -70,7 +101,8 @@ def read_source(home: Path, name: str) -> str:
 def parse_util(home: Path, name: str) -> dict:
     """Read one util's header (PEP 723 block + docstring). Pure read — never executes."""
     info: dict = {"name": name, "deps": [], "summary": None, "usage": None,
-                  "calls_doc": None, "problems": []}
+                  "calls_doc": None, "tags": [], "net": None, "secrets": None,
+                  "problems": []}
     problems = info["problems"]
 
     if not NAME_RE.match(name):
@@ -128,6 +160,15 @@ def parse_util(home: Path, name: str) -> dict:
             info["calls_doc"] = [] if value == "(none)" else [
                 c.strip() for c in value.split(",") if c.strip()
             ]
+        elif stripped.startswith("tags:") and not info["tags"]:
+            info["tags"] = [t.strip() for t in stripped[len("tags:"):].split(",") if t.strip()]
+        elif stripped.startswith("net:") and info["net"] is None:
+            info["net"] = stripped[len("net:"):].strip().lower()
+        elif stripped.startswith("secrets:") and info["secrets"] is None:
+            value = stripped[len("secrets:"):].strip()
+            info["secrets"] = [] if value.lower() == "(none)" else [
+                s.strip() for s in value.split(",") if s.strip()
+            ]
 
     if info["usage"] is None:
         problems.append("missing 'usage:' line in docstring")
@@ -135,6 +176,19 @@ def parse_util(home: Path, name: str) -> dict:
         problems.append(f"'usage:' line does not show the invocation 'gu {name}'")
     if info["calls_doc"] is None:
         problems.append("missing 'calls:' line in docstring (use 'calls: (none)')")
+    if not info["tags"]:
+        problems.append("missing 'tags:' line in docstring (at least one tag)")
+    if info["net"] not in NET_VALUES:
+        problems.append(
+            "missing 'net: outbound' or 'net: none' line in docstring — declare whether this "
+            "util opens network connections; the scheduler's sandbox denies ALL TCP to a util "
+            "that declares none, or declares nothing")
+    undeclared = sorted(secrets_read(src) - {s.upper() for s in (info["secrets"] or [])})
+    if undeclared:
+        problems.append(
+            f"reads credential env var(s) not declared on the 'secrets:' line: "
+            f"{', '.join(undeclared)} — the scheduler's sandbox injects only DECLARED secrets, "
+            "so an undeclared one arrives empty")
     if "--json" not in src:
         problems.append("no --json mode in source")
     if "--selftest" not in src:

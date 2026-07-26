@@ -117,6 +117,9 @@ catalog regenerable and makes utils self-describing:
 
 usage: gu heic2jpg <files...> [--quality N] [--json]
 calls: (none)
+tags: images, conversion
+net: none
+secrets: (none)
 """
 
 import argparse, json, sys
@@ -130,6 +133,10 @@ import argparse, json, sys
 - **`calls:` line**: which other utils this one invokes (or `(none)`). *Documentation only* —
   the authoritative dependency graph is derived from source by `gu deps` (§3.4), and `gu lint`
   flags any disagreement between the two.
+- **`tags:` line**: at least one comma-separated tag, for grouping and search.
+- **`net:` line**: `outbound` if the util opens any network connection, else `none`.
+- **`secrets:` line**: every credential-shaped env var the code reads, or `(none)`.
+  `gu lint` scans the source for credential-shaped env reads and flags any the line omits.
 - **The I/O contract** (composition lives or dies on this discipline):
   - data on **stdout** — human-readable by default, structured JSON under `--json`;
   - diagnostics and progress on **stderr**, never stdout;
@@ -143,6 +150,18 @@ Conformance is enforced, not assumed: `create-util` and `revise-util` run `gu li
 declaring done, and `gu list` warns loudly about nonconforming utils instead of silently
 dropping them from the catalog.
 
+**`net:` and `secrets:` are a security contract with a second consumer.** This library is also
+the util library of the *routine-scheduler* instance, where LLM-driven routines invoke these
+same utils — and there every util subprocess runs inside a Landlock sandbox keyed off exactly
+those two lines: `net:` decides whether TCP is permitted at all (undeclared = **all TCP
+denied**, fail closed), and `secrets:` decides which credentials are injected (undeclared =
+scrubbed, even when the daemon's own environment carries them). A util that omits them is not
+merely under-documented — it lints clean on a workstation and then fails on the server with no
+network or an empty credential, which is markedly harder to diagnose than a clean rejection.
+`rsched.utils_lib.header_problems` is the authoritative spec for the header; `gu lint`
+implements the same rule set so the two gates agree. **If either moves, move the other** — a
+util created here must be one the scheduler accepts.
+
 ### 3.4 The `gu` dispatcher
 
 `gu` is the entire "use" mechanism. Running utils requires no skill. It is a single stdlib-only
@@ -153,7 +172,7 @@ Python script — it bootstraps everything else, so it cannot depend on anything
 | `gu list` | Glob `utils/*/main.py`, read the PEP 723 deps + docstring header (first ~15 lines, **no execution, no venv**), print the catalog fresh. This *is* the index — derived, never stored. Nonconforming utils produce a loud warning line, not a silent omission. |
 | `gu <util> [args]` | `uv run utils/<util>/main.py [args]` — runs the util in its own cached env. |
 | `gu help <util>` | The util's `--help`. |
-| `gu lint [<util>]` | Doc-standard conformance: PEP 723 header parses, docstring shape (summary / `usage:` / `calls:`), `--json` and `--selftest` present, and the `calls:` line matches the derived graph. No util, lint everything. |
+| `gu lint [<util>]` | Doc-standard conformance: PEP 723 header parses, docstring shape (summary / `usage:` / `calls:` / `tags:` / `net:` / `secrets:`), `--json` and `--selftest` present, the `calls:` line matches the derived graph, and the `secrets:` line covers every credential-shaped env var the source reads. No util, lint everything. |
 | `gu deps <util>` | The derived dependency graph: what `<util>` calls and what calls it, found by scanning `utils/*/main.py` for `gu <name>` subprocess call sites. Feeds blast-radius checks in `revise-util` and removal safety. |
 | `gu remove <util>` | Delete a util — but first check reverse-dependents via the derived graph and refuse if anything still calls it (`--force` to override). Commits the removal. |
 | `gu index` | (optional) Same data as `gu list`, written to a file if a cached `INDEX.md` is ever wanted. The harness never needs it. |
@@ -244,8 +263,9 @@ rollback-able (`git revert`). It also gives sync (push to a private remote) for 
    of a dependency near zero, so the bar for "just write it myself" should be high. Skip the
    search only for logic that is genuinely trivial or stdlib-obvious.
 4. Pick a kebab-case slug; scaffold `utils/<slug>/main.py` conforming to the doc standard:
-   PEP 723 deps, standard docstring (summary / `usage:` / `calls:`), `argparse`, the `--json`
-   structured-output mode, and a `--selftest` with at least one fixture-backed check.
+   PEP 723 deps, standard docstring (summary / `usage:` / `calls:` / `tags:` / `net:` /
+   `secrets:`), `argparse`, the `--json` structured-output mode, and a `--selftest` with at
+   least one fixture-backed check.
 5. Verify: `gu lint <slug>`, smoke-test via `gu <slug>` (and `gu <slug> --json`), and run
    `gu <slug> --selftest` — all green before declaring done.
 6. Commit (`create <slug>`).

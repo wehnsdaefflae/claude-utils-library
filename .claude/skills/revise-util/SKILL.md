@@ -47,10 +47,20 @@ any `calls:` docstring line.
 ## 3. Edit `LIB/utils/<slug>/main.py`
 Keep it conforming to the doc standard: PEP 723 deps (add a package here if the fix needs
 one — prefer an established package over hand-rolling, per-util isolation makes it
-near-free), the docstring header (summary / `usage:` / `calls:` — update `calls:` if the
-call sites changed), `--json`, `--selftest`, and the I/O contract (data on stdout,
-diagnostics on stderr, meaningful exit codes). Extend the selftest when the revision adds
-behavior — the fixture that would have caught this bug belongs in it now.
+near-free), the docstring header (summary / `usage:` / `calls:` / `tags:` / `net:` /
+`secrets:`), `--json`, `--selftest`, and the I/O contract (data on stdout, diagnostics on
+stderr, meaningful exit codes). Extend the selftest when the revision adds behavior — the
+fixture that would have caught this bug belongs in it now.
+
+**A revision can invalidate the header's enforcement lines — re-check all three:**
+- new or removed `gu <name>` call site → update `calls:`
+- the fix now opens a network connection (or stops needing one) → update `net:`; the
+  scheduler's sandbox denies ALL TCP to a util declaring `none`, so adding an HTTP call
+  without flipping this line ships a util that cannot connect on the server
+- the fix reads a new credential env var → add it to `secrets:`; only DECLARED secrets are
+  injected, so an undeclared one silently arrives empty
+
+`gu lint` catches all three, which is why step 4 runs it first.
 
 ## 4. Verify (the gate for every revision, explicit or implicit)
 1. `gu lint <slug>`

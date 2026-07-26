@@ -26,9 +26,15 @@ Key design facts (full rationale in SYSTEM_DESIGN.md):
   `gu <name>` call sites; the `calls:` docstring line is documentation only (`gu lint`
   keeps it honest).
 - **Doc standard** (every `utils/<slug>/main.py`): PEP 723 `# /// script` deps block;
-  docstring first line `<slug> — <summary>` (em dash) + `usage:` + `calls:` lines; argparse
-  with `--json` and `--selftest`; data on stdout, diagnostics on stderr, meaningful exit
-  codes.
+  docstring first line `<slug> — <summary>` (em dash) + `usage:` + `calls:` + `tags:` +
+  `net:` + `secrets:` lines; argparse with `--json` and `--selftest`; data on stdout,
+  diagnostics on stderr, meaningful exit codes.
+- **`net:` and `secrets:` are enforcement, shared with the routine-scheduler.** That instance
+  runs these utils in a Landlock sandbox keyed off the two lines: `net: none` (or undeclared)
+  denies ALL TCP, and only credentials named on `secrets:` are injected. Omitting them yields
+  a util that lints clean here and fails on the server with no network or an empty credential.
+  `rsched.utils_lib.header_problems` is the authoritative spec; `gu lint` mirrors it — **if
+  either moves, move the other.**
 - **Per-util dependency isolation** via PEP 723 + `uv run`; utils compose only through the
   CLI boundary (`["gu", "<name>", ..., "--json"]` subprocesses), never Python imports.
 - **`gu` is stdlib-only** — it bootstraps everything else, so it cannot depend on anything

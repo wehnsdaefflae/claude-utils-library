@@ -26,13 +26,19 @@ fi
 cp -f "$REPO/gu" "$LIB/gu"
 chmod +x "$LIB/gu"
 echo "  gu     -> $LIB/gu"
-if [ -n "$(git -C "$LIB" status --porcelain)" ]; then
-  git -C "$LIB" add -A
-  if git -C "$LIB" commit -qm "deploy: gu dispatcher + library scaffolding"; then
-    echo "  library changes committed"
+# Stage ONLY what this script wrote. `add -A` would sweep up unrelated work-in-progress
+# under a "deploy:" message and auto-push it — a util someone was still editing lands in the
+# shared remote, mislabelled and unfinished. Deploy commits the dispatcher, nothing else.
+git -C "$LIB" add -- gu .gitignore 2>/dev/null || true
+if ! git -C "$LIB" diff --cached --quiet; then
+  if git -C "$LIB" commit -qm "deploy: gu dispatcher"; then
+    echo "  gu committed"
   else
     echo "  WARNING: commit failed (is git user.name/user.email configured?) — changes left staged"
   fi
+fi
+if [ -n "$(git -C "$LIB" status --porcelain)" ]; then
+  echo "  note: other uncommitted changes in $LIB left alone (deploy does not commit them)"
 fi
 
 # 3. Put gu on PATH — checking for a collision first (GraalVM also ships a `gu`)
